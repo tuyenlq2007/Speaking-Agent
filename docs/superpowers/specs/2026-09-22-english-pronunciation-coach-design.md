@@ -43,7 +43,15 @@ The experience is successful when the learner can:
 
 ## 4. Technical approach
 
-The application is a static React and TypeScript project. Browser-specific speech functionality is isolated behind small adapters so that the practice flow and matching logic remain deterministic and testable.
+The application is a static React and TypeScript project built with Vite and managed with npm. Browser-specific speech functionality is isolated behind small adapters so that the practice flow and matching logic remain deterministic and testable.
+
+The project supports this local production workflow:
+
+1. Run `npm install` to install dependencies.
+2. Run `npm run build` to type-check and create a production bundle.
+3. Deploy the generated `dist/` directory as a static site on Netlify.
+
+The production bundle must use relative or root-safe asset paths supported by a Netlify site deployed at its domain root. The application has only one route, so it does not require a history-API redirect rule.
 
 ### Main modules
 
@@ -196,12 +204,16 @@ The results screen repeats the approximate-feedback label in concise form.
 - Verify responsive use on a mobile-sized viewport and, where available, a physical mobile browser.
 - Complete the flow using keyboard navigation and confirm live status announcements.
 - Confirm retrying the same sentence and starting a new sentence reset the correct state.
+- Run `npm install` from a clean dependency state, then run `npm run build` successfully.
+- Serve the generated `dist/` folder locally and complete a production-build smoke test.
+- Confirm `dist/` contains a deployable entry page and its referenced static assets.
 
 ## 12. Acceptance criteria
 
 The first version is complete when:
 
 - It can be deployed as static files without a backend or API key.
+- `npm install` installs the project and `npm run build` produces the Netlify-ready `dist/` directory.
 - A Vietnamese learner can complete the full designed practice flow.
 - Every incorrect word receives at most three counted attempts and exits early on success.
 - The final sentence receives at most three counted attempts and exits early on success.
