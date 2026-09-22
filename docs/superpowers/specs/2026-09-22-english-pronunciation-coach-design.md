@@ -53,6 +53,12 @@ The project supports this local production workflow:
 
 The production bundle must use relative or root-safe asset paths supported by a Netlify site deployed at its domain root. The application has only one route, so it does not require a history-API redirect rule.
 
+### Reference implementation inheritance
+
+Development uses `C:\Users\Admin\Documents\Agent\english-agent` as a behavioral reference rather than copying it wholesale. The new application retains its useful browser-speech patterns: British voice preference, cancellation of active synthesis, protection against stale speech callbacks, explicit recognition lifecycle handling, and a three-attempt retry limit.
+
+The reference application's global mutable state, book-selection flow, local progress persistence, manual correctness override, automatic recording immediately after playback, exact-string comparison, and Node static server are not inherited. SpeakRight instead implements the approved custom-sentence flow with typed speech adapters, a deterministic practice state machine, sequence-aligned word matching, explicit microphone controls, and Vite's static production output.
+
 ### Main modules
 
 - **PracticeFlow** owns the state machine and transitions between input, demonstration, initial reading, word practice, final reading, and results.
