@@ -66,6 +66,9 @@ function mapRecognitionError(error: string): RecognitionErrorCode {
   return "unavailable";
 }
 
+/** How long the learner may stay silent after speaking before the sentence counts as finished. */
+export const DEFAULT_SILENCE_MS = 3000;
+
 export class RecognitionService {
   private active: SpeechRecognitionLike | null = null;
   private operationToken = 0;
@@ -73,7 +76,8 @@ export class RecognitionService {
 
   constructor(
     private readonly Recognition: SpeechRecognitionConstructor | undefined =
-      window.SpeechRecognition ?? window.webkitSpeechRecognition
+      window.SpeechRecognition ?? window.webkitSpeechRecognition,
+    private readonly silenceMs: number = DEFAULT_SILENCE_MS
   ) {
     this.supported = Boolean(Recognition);
   }
@@ -96,14 +100,17 @@ export class RecognitionService {
     const token = this.operationToken;
     this.active = recognition;
     recognition.lang = "en-GB";
-    recognition.continuous = false;
+    // Keep listening through pauses; we decide when the learner has finished.
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     return new Promise((resolve, reject) => {
       let settled = false;
       let latestTranscript = "";
+      let silenceTimer: ReturnType<typeof setTimeout> | undefined;
       const cleanUp = () => {
+        clearTimeout(silenceTimer);
         recognition.onresult = null;
         recognition.onerror = null;
         recognition.onend = null;
@@ -121,11 +128,16 @@ export class RecognitionService {
         }
         latestTranscript = parts.join(" ").trim();
         if (latestTranscript) onTranscript?.(latestTranscript, allFinal);
-        if (!allFinal) return;
-        settled = true;
-        cleanUp();
-        if (latestTranscript) resolve(latestTranscript);
-        else reject(new RecognitionError("no-speech"));
+        if (!latestTranscript) return;
+        // Every new result restarts the silence window, so slow speakers are not cut off.
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          if (settled || token !== this.operationToken) return;
+          settled = true;
+          cleanUp();
+          recognition.stop();
+          resolve(latestTranscript);
+        }, this.silenceMs);
       };
       recognition.onerror = (event) => {
         if (settled || token !== this.operationToken) return;

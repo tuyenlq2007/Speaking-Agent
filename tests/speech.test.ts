@@ -44,11 +44,51 @@ describe("recognition adapter", () => {
       constructor() { super(); instance = this; }
     }
 
-    const service = new RecognitionService(FakeRecognition);
+    const service = new RecognitionService(FakeRecognition, 20);
     await expect(service.listen((transcript) => transcripts.push(transcript))).resolves.toBe("hello");
     expect(transcripts).toEqual(["hel", "hello"]);
     expect(instance?.lang).toBe("en-GB");
-    expect(instance?.continuous).toBe(false);
+    expect(instance?.continuous).toBe(true);
     expect(instance?.interimResults).toBe(true);
+  });
+
+  it("keeps listening through a pause shorter than the silence window", async () => {
+    vi.useFakeTimers();
+    try {
+      let instance!: SlowRecognition;
+      class SlowRecognition extends EventTarget implements SpeechRecognitionLike {
+        lang = "";
+        continuous = false;
+        interimResults = false;
+        maxAlternatives = 0;
+        onresult: ((event: SpeechRecognitionEventLike) => void) | null = null;
+        onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null = null;
+        onend: (() => void) | null = null;
+        start = vi.fn();
+        stop = vi.fn();
+        abort = vi.fn();
+        constructor() { super(); instance = this; }
+      }
+      const emit = (parts: string[]) => instance.onresult?.({
+        results: Object.assign(
+          Object.fromEntries(parts.map((text, index) => [index, Object.assign({ 0: { transcript: text, confidence: 1 } }, { length: 1, isFinal: true })])),
+          { length: parts.length }
+        )
+      } as unknown as SpeechRecognitionEventLike);
+
+      const service = new RecognitionService(SlowRecognition, 3000);
+      let settled = false;
+      const promise = service.listen().then((value) => { settled = true; return value; });
+      emit(["I check"]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(settled).toBe(false);
+      emit(["I check", "the logs"]);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(promise).resolves.toBe("I check the logs");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
