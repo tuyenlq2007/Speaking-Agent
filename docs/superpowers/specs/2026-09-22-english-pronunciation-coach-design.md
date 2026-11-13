@@ -2,7 +2,7 @@
 
 ## 1. Product goal
 
-Build a single-page website for Vietnamese learners who want to practise English pronunciation independently. A learner enters one English sentence, hears a British English model, reads the sentence aloud, and receives approximate word-level feedback. Words that were not recognised correctly are practised individually before the learner reads the complete sentence again.
+Build a single-page website for Vietnamese learners who want to practise English pronunciation independently. A learner enters one English sentence, hears a British English model, reads the sentence aloud, and receives approximate word-level feedback. When the complete sentence is not recognised, the website plays the complete model sentence again and the learner retries the complete sentence; there is no isolated-word reading loop.
 
 The website must run without an application backend, account, or user-provided API key. It uses browser speech capabilities and clearly describes its feedback as approximate rather than phoneme-level pronunciation assessment.
 
@@ -15,7 +15,7 @@ The experience is successful when the learner can:
 1. Enter an English sentence of up to 200 characters.
 2. Hear the sentence spoken using a British English voice when one is available.
 3. Read the sentence and see which expected words were or were not recognised.
-4. Practise each unrecognised word, moving on immediately after success or after three failed attempts.
+4. Hear the complete model sentence again when any word was not recognised.
 5. Read the complete sentence again, finishing immediately after success or after three failed attempts.
 6. Review the final result and either retry the same sentence or start a new one.
 
@@ -28,8 +28,7 @@ The experience is successful when the learner can:
 - British English speech synthesis (`en-GB`) with a documented fallback.
 - Browser speech recognition configured for British English.
 - Word-level comparison between the expected sentence and recognised transcript.
-- Individual retry loops for words not recognised correctly.
-- A final full-sentence retry loop.
+- A full-sentence retry loop that preserves word-level visual feedback.
 - Clear browser, microphone, recognition, voice, and network error states.
 - Automated tests for deterministic application logic and mocked browser speech adapters.
 
@@ -55,14 +54,14 @@ The production bundle must use relative or root-safe asset paths supported by a 
 
 ### Reference implementation inheritance
 
-Development uses `C:\Users\Admin\Documents\Agent\english-agent` as a behavioral reference rather than copying it wholesale. The new application retains its useful browser-speech patterns: British voice preference, cancellation of active synthesis, protection against stale speech callbacks, explicit recognition lifecycle handling, and a three-attempt retry limit.
+Development uses `C:\Users\Admin\Documents\Agent\english-agent` as a behavioral reference rather than copying it wholesale. The new application retains its useful browser-speech patterns: British voice preference, cancellation of active synthesis, protection against stale speech callbacks, explicit recognition lifecycle handling, and automatic recognition after model playback. SpeakRight uses a three-attempt full-sentence retry limit.
 
-The reference application's global mutable state, book-selection flow, local progress persistence, manual correctness override, automatic recording immediately after playback, exact-string comparison, and Node static server are not inherited. SpeakRight instead implements the approved custom-sentence flow with typed speech adapters, a deterministic practice state machine, sequence-aligned word matching, explicit microphone controls, and Vite's static production output.
+The reference application's global mutable state, book-selection flow, local progress persistence, manual correctness override, exact-string comparison, and Node static server are not inherited. SpeakRight instead implements the approved custom-sentence flow with typed speech adapters, a deterministic practice state machine, sequence-aligned word matching, automatic microphone activation after playback, and Vite's static production output.
 
 ### Main modules
 
-- **PracticeFlow** owns the state machine and transitions between input, demonstration, initial reading, word practice, final reading, and results.
-- **SpeechService** wraps `window.speechSynthesis`, selects an `en-GB` voice, and speaks a sentence or individual word.
+- **PracticeFlow** owns the state machine and transitions between input, demonstration, initial reading, full-sentence retries, and results.
+- **SpeechService** wraps `window.speechSynthesis`, selects an `en-GB` voice, and speaks the complete sentence.
 - **RecognitionService** wraps `SpeechRecognition` or `webkitSpeechRecognition`, configures recognition with `en-GB`, and emits a transcript or a typed error.
 - **WordMatcher** normalises and tokenises text, aligns expected and recognised words, and returns the status of each expected word.
 - **PracticeView** renders the sentence, word statuses, current instruction, microphone control, and remaining attempts.
@@ -76,31 +75,24 @@ The flow has the following states:
 
 1. `input` — the learner enters a sentence.
 2. `speaking-model-sentence` — the website reads the complete sentence.
-3. `ready-for-initial-reading` — the learner can start the microphone.
+3. `ready-for-initial-reading` — a transient state that automatically starts the microphone.
 4. `listening-initial-reading` — speech recognition is active.
 5. `reviewing-initial-reading` — the transcript is aligned with the expected sentence.
-6. `speaking-model-word` — the current incorrect word is read aloud.
-7. `ready-for-word-retry` — the learner can start an isolated-word attempt.
-8. `listening-word-retry` — recognition is active for that word.
-9. `speaking-model-final-sentence` — the sentence is read again after all incorrect words have been processed.
-10. `ready-for-final-reading` — the learner can start a final sentence attempt.
-11. `listening-final-reading` — recognition is active for the current final attempt.
-12. `results` — the session has succeeded or reached its final attempt limit.
-13. `recoverable-error` — progress is preserved while the learner retries an operation that did not count as an attempt.
+6. `speaking-model-final-sentence` — the complete sentence is played again before a retry.
+7. `ready-for-final-reading` — a transient state that automatically starts a full-sentence attempt.
+8. `listening-final-reading` — recognition is active for the current full-sentence attempt.
+9. `results` — the session has succeeded or reached its final attempt limit.
+10. `recoverable-error` — progress is preserved while the learner retries an operation that did not count as an attempt.
 
 Only one speech synthesis or recognition operation may run at a time. Starting recognition cancels active synthesis. Leaving a listening state stops recognition and releases related event handlers.
 
 ### Initial reading
 
-The initial reading has no retry limit of its own. It establishes which words require focused practice. If recognition reports no speech or a recoverable service error, no result is generated and the learner can retry without penalty.
+The initial reading has no retry limit of its own. It establishes word-level feedback and which words were not recognised. If recognition reports no speech or a recoverable service error, no result is generated and the learner can retry without penalty.
 
-### Individual word practice
+### Full-sentence retry practice
 
-Incorrect expected words are processed from left to right. Before every attempt, the website speaks the current word. A successful recognition moves immediately to the next incorrect word. A failed recognition increments the attempt count; after the third failed attempt, the flow records the word as needing more practice and moves on. No-speech and recoverable service errors do not consume an attempt.
-
-### Final sentence practice
-
-After all individual words are processed, the website speaks the complete sentence again. The learner then has up to three recognised attempts. A completely matched sentence finishes immediately with success. Otherwise the flow returns feedback, speaks the sentence again, and offers the next attempt. After the third failed attempt, the session finishes and lists words that still need work. No-speech and recoverable service errors do not consume an attempt.
+After the initial reading, the website speaks the complete sentence again and automatically starts recognition. The learner has up to three recognised full-sentence attempts. A completely matched sentence finishes immediately with success. Otherwise the flow returns word-level feedback, speaks the complete sentence again, and automatically starts the next attempt. After the third failed attempt, the session finishes and lists words that still need work. No-speech and recoverable service errors do not consume an attempt.
 
 ## 6. Text normalisation and word matching
 
@@ -122,7 +114,7 @@ For every expected token, the matcher returns one of:
 - `incorrect` — aligned with a different recognised token.
 - `missing` — no recognised token aligned to it.
 
-Extra recognised tokens are retained in diagnostic matcher output for testing but are not displayed as expected-word chips. Both `incorrect` and `missing` expected tokens enter the focused word-practice queue.
+Extra recognised tokens are retained in diagnostic matcher output for testing but are not displayed as expected-word chips. Both `incorrect` and `missing` expected tokens are highlighted and included in the final words-needing-work result.
 
 Contractions are compared in their written form. The first version does not maintain a pronunciation dictionary or equate alternative transcript spellings such as `cannot` and `can't`; this limitation is covered by the approximate-feedback notice.
 
@@ -136,7 +128,7 @@ The learner can replay a model sentence or the current model word while not reco
 
 ### Speech recognition
 
-Recognition uses the browser's `SpeechRecognition` implementation, including the prefixed `webkitSpeechRecognition` form where required. It runs in non-continuous mode with interim results disabled and language set to `en-GB`.
+Recognition uses the browser's `SpeechRecognition` implementation, including the prefixed `webkitSpeechRecognition` form where required. It runs in non-continuous mode with interim results enabled and language set to `en-GB`. Interim transcripts are rendered continuously while the learner speaks; scoring waits for the final transcript or the end of the recognition session.
 
 The application itself has no backend. The privacy notice must state that the browser vendor may process microphone audio remotely and that on-device processing is not guaranteed.
 
@@ -193,8 +185,8 @@ The results screen repeats the approximate-feedback label in concise form.
 - Normalisation of case, punctuation, apostrophes, and whitespace.
 - Sequence alignment for equal sentences, substitutions, omissions, and insertions.
 - Construction and ordering of the incorrect-word queue.
-- Immediate progression after a successful word attempt.
-- Progression after the third failed word attempt.
+- Direct progression from initial feedback to a complete-sentence replay.
+- Confirmation that isolated-word retry states are never entered.
 - Immediate success after a fully matched final sentence.
 - Termination after the third failed final-sentence attempt.
 - Preservation of attempt counts for no-speech and recoverable errors.
@@ -221,8 +213,8 @@ The first version is complete when:
 - It can be deployed as static files without a backend or API key.
 - `npm install` installs the project and `npm run build` produces the Netlify-ready `dist/` directory.
 - A Vietnamese learner can complete the full designed practice flow.
-- Every incorrect word receives at most three counted attempts and exits early on success.
-- The final sentence receives at most three counted attempts and exits early on success.
+- The application always replays the complete sentence rather than an individual incorrect word.
+- The complete sentence receives at most three counted retry attempts and exits early on success.
 - Alignment does not cascade errors after a single insertion or omission.
 - Unsupported APIs and recoverable speech errors are handled without losing valid progress.
 - The British English preference, fallback, browser support, privacy behaviour, and approximate nature of feedback are visible and accurate.
