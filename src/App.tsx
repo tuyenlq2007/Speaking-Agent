@@ -15,7 +15,8 @@ import {
 } from "./domain/practiceFlow";
 import { tokenizeForDisplay } from "./domain/matcher";
 import { splitIntoSentences } from "./domain/sentences";
-import { RecognitionError, RecognitionService, SpeechService } from "./services/speech";
+import { RecognitionError, SpeechService } from "./services/speech";
+import { WhisperRecognitionService } from "./services/whisperRecognition";
 import { translateToVietnamese } from "./services/translation";
 import { sampleTopics } from "./data/sampleSentences";
 import { createSampleQueue } from "./domain/sampleQueue";
@@ -80,11 +81,13 @@ function App() {
   const [translation, setTranslation] = useState("");
   const [translationStatus, setTranslationStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const speech = useRef<SpeechService | null>(null);
-  const recognition = useRef<RecognitionService | null>(null);
+  const recognition = useRef<WhisperRecognitionService | null>(null);
   const listeningOperation = useRef(false);
+  const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [modelProgress, setModelProgress] = useState(0);
 
   if (!speech.current && typeof window !== "undefined") speech.current = new SpeechService();
-  if (!recognition.current && typeof window !== "undefined") recognition.current = new RecognitionService();
+  if (!recognition.current && typeof window !== "undefined") recognition.current = new WhisperRecognitionService();
 
   const supported = recognition.current?.supported ?? false;
   const activeStep = phaseStep(state.phase);
@@ -154,6 +157,14 @@ function App() {
     setLiveTranscript("");
     setState(startPractice(passageSentences[0]));
   }, [selectedTopicId, sentenceIndex, sentences, state]);
+
+  useEffect(() => {
+    if (!recognition.current?.supported) return;
+    recognition.current.warmUp((percent) => setModelProgress(Math.round(percent))).then(
+      () => setModelStatus("ready"),
+      () => setModelStatus("error")
+    );
+  }, []);
 
   useEffect(() => {
     const updateVoiceStatus = () => setVoiceWarning(!speech.current!.getVoiceSelection().exactBritishVoice);
@@ -311,6 +322,8 @@ function App() {
           validation={validation}
           supported={supported}
           voiceWarning={voiceWarning}
+          modelStatus={modelStatus}
+          modelProgress={modelProgress}
           onDraftChange={handleDraftChange}
           onStart={handleStart}
           onReplay={() => replay(splitIntoSentences(draft)[0] ?? "")}
@@ -359,6 +372,8 @@ interface InputViewProps {
   validation: string | null;
   supported: boolean;
   voiceWarning: boolean;
+  modelStatus: "loading" | "ready" | "error";
+  modelProgress: number;
   replaying: boolean;
   onDraftChange(value: string): void;
   onStart(): void;
@@ -440,6 +455,14 @@ function InputView(props: InputViewProps) {
           <div className="notice error-notice" role="alert">
             Trình duyệt này chưa hỗ trợ nhận dạng giọng nói. Hãy dùng Chrome hoặc Edge phiên bản mới.
           </div>
+        )}
+        {props.modelStatus === "loading" && (
+          <div className="notice" role="status">
+            Đang tải mô hình nhận dạng Whisper{props.modelProgress ? ` (${props.modelProgress}%)` : ""}. Lần đầu có thể mất một lúc; các lần sau sẽ nhanh hơn.
+          </div>
+        )}
+        {props.modelStatus === "error" && (
+          <div className="notice error-notice" role="alert">Không tải được mô hình nhận dạng. Hãy kiểm tra kết nối Internet rồi tải lại trang.</div>
         )}
         {props.voiceWarning && (
           <div className="notice" role="status">Không tìm thấy giọng Anh-Anh; SpeakRight sẽ dùng giọng tiếng Anh gần nhất.</div>

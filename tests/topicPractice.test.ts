@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App";
 import { sampleTopics } from "../src/data/sampleSentences";
 import { splitIntoSentences } from "../src/domain/sentences";
-import { RecognitionService, SpeechService } from "../src/services/speech";
+import { SpeechService } from "../src/services/speech";
+import { WhisperRecognitionService } from "../src/services/whisperRecognition";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -16,14 +17,17 @@ beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.spyOn(Math, "random").mockReturnValue(0.999);
   vi.stubGlobal("speechSynthesis", { addEventListener() {}, removeEventListener() {} });
-  vi.stubGlobal("SpeechRecognition", class {});
+  vi.stubGlobal("Worker", class {});
+  vi.stubGlobal("AudioContext", class {});
+  Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: vi.fn() }, configurable: true });
+  vi.spyOn(WhisperRecognitionService.prototype, "warmUp").mockResolvedValue();
   vi.spyOn(SpeechService.prototype, "getVoiceSelection").mockReturnValue({ voice: null, exactBritishVoice: true });
   vi.spyOn(SpeechService.prototype, "cancel").mockImplementation(() => {});
   vi.spyOn(SpeechService.prototype, "speak").mockImplementation((sentence) => {
     spokenSentence = sentence;
     return new Promise((resolve) => { finishPlayback = resolve; });
   });
-  vi.spyOn(RecognitionService.prototype, "listen").mockImplementation(() =>
+  vi.spyOn(WhisperRecognitionService.prototype, "listen").mockImplementation(() =>
     new Promise((resolve) => { finishReading = resolve; })
   );
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
