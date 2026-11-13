@@ -1,8 +1,12 @@
 export interface EndpointOptions {
   /** RMS level (0–1) above which a chunk counts as speech. */
   speechThreshold: number;
-  /** Silence after speech that marks the end of the sentence. */
-  silenceMs: number;
+  /** Shortest silence after speech that ends the sentence. */
+  minSilenceMs: number;
+  /** Longest silence we ever wait, used for speakers who pause a lot. */
+  maxSilenceMs: number;
+  /** The allowed silence is this many times the longest pause heard so far. */
+  pauseFactor: number;
   /** Give up when nothing is said for this long. */
   noSpeechMs: number;
   /** Hard cap for one recording. */
@@ -11,7 +15,9 @@ export interface EndpointOptions {
 
 export const defaultEndpointOptions: EndpointOptions = {
   speechThreshold: 0.012,
-  silenceMs: 3000,
+  minSilenceMs: 1200,
+  maxSilenceMs: 3000,
+  pauseFactor: 1.5,
   noSpeechMs: 8000,
   maxMs: 40000
 };
@@ -29,6 +35,7 @@ export function rootMeanSquare(samples: Float32Array): number {
 export class Endpointer {
   private elapsedMs = 0;
   private silentMs = 0;
+  private longestPauseMs = 0;
   private speechStarted = false;
 
   constructor(private readonly options: EndpointOptions = defaultEndpointOptions) {}
@@ -37,13 +44,17 @@ export class Endpointer {
     const chunkMs = (samples.length / sampleRate) * 1000;
     this.elapsedMs += chunkMs;
     if (rootMeanSquare(samples) >= this.options.speechThreshold) {
+      // A pause in the middle of the sentence tells us how patient to be with this speaker.
+      if (this.speechStarted) this.longestPauseMs = Math.max(this.longestPauseMs, this.silentMs);
       this.speechStarted = true;
       this.silentMs = 0;
     } else {
       this.silentMs += chunkMs;
     }
 
-    if (this.speechStarted && this.silentMs >= this.options.silenceMs) return "finish";
+    const { minSilenceMs, maxSilenceMs, pauseFactor } = this.options;
+    const allowedSilenceMs = Math.min(maxSilenceMs, Math.max(minSilenceMs, this.longestPauseMs * pauseFactor));
+    if (this.speechStarted && this.silentMs >= allowedSilenceMs) return "finish";
     if (!this.speechStarted && this.elapsedMs >= this.options.noSpeechMs) return "no-speech";
     if (this.elapsedMs >= this.options.maxMs) return this.speechStarted ? "finish" : "no-speech";
     return "continue";

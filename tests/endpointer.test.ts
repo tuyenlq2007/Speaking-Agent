@@ -4,14 +4,31 @@ import { cleanWhisperText } from "../src/services/whisperRecognition";
 
 const RATE = 16000;
 const chunk = (ms: number, level: number) => new Float32Array((RATE * ms) / 1000).fill(level);
-const options = { speechThreshold: 0.01, silenceMs: 3000, noSpeechMs: 8000, maxMs: 40000 };
+const options = { speechThreshold: 0.01, minSilenceMs: 1200, maxSilenceMs: 3000, pauseFactor: 1.5, noSpeechMs: 8000, maxMs: 40000 };
 
 describe("endpointer", () => {
-  it("waits through a long pause before finishing", () => {
+  it("finishes quickly after a speaker who does not pause", () => {
+    const endpointer = new Endpointer(options);
+    expect(endpointer.push(chunk(2000, 0.1), RATE)).toBe("continue");
+    expect(endpointer.push(chunk(1100, 0), RATE)).toBe("continue");
+    expect(endpointer.push(chunk(100, 0), RATE)).toBe("finish");
+  });
+
+  it("waits longer for a speaker who pauses mid-sentence", () => {
     const endpointer = new Endpointer(options);
     expect(endpointer.push(chunk(500, 0.1), RATE)).toBe("continue");
-    expect(endpointer.push(chunk(2500, 0), RATE)).toBe("continue");
+    expect(endpointer.push(chunk(1000, 0), RATE)).toBe("continue");
     expect(endpointer.push(chunk(500, 0.1), RATE)).toBe("continue");
+    // A one second pause allows 1.5 seconds of silence before finishing.
+    expect(endpointer.push(chunk(1400, 0), RATE)).toBe("continue");
+    expect(endpointer.push(chunk(100, 0), RATE)).toBe("finish");
+  });
+
+  it("never waits longer than the maximum silence", () => {
+    const endpointer = new Endpointer(options);
+    endpointer.push(chunk(500, 0.1), RATE);
+    endpointer.push(chunk(2800, 0), RATE);
+    endpointer.push(chunk(500, 0.1), RATE);
     expect(endpointer.push(chunk(2900, 0), RATE)).toBe("continue");
     expect(endpointer.push(chunk(100, 0), RATE)).toBe("finish");
   });
