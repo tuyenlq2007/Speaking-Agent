@@ -15,6 +15,7 @@ let spokenSentence = "";
 
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   vi.spyOn(Math, "random").mockReturnValue(0.999);
   vi.stubGlobal("speechSynthesis", { addEventListener() {}, removeEventListener() {} });
   vi.stubGlobal("Worker", class {});
@@ -45,6 +46,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -70,9 +72,28 @@ async function readSentence(transcript?: string) {
   await act(async () => finishPlayback!());
   expect(finishReading).toBeDefined();
   await act(async () => finishReading!(transcript ?? expected));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
 }
 
 describe("topic practice", () => {
+  it("shows the recognised words before moving to the next sentence", async () => {
+    await selectTopic();
+    await clickButton("Bắt đầu luyện");
+    const first = spokenSentence;
+    await act(async () => finishPlayback!());
+    await act(async () => finishReading!("I said something else"));
+    // The first attempt fails, so the model is replayed; finish the retry with a wrong reading too.
+    await act(async () => finishPlayback!());
+    await act(async () => finishReading!("my last attempt"));
+
+    expect(container.textContent).toContain("my last attempt");
+    expect(container.textContent).toContain("CÂU 1 /");
+    expect(spokenSentence).toBe(first);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(container.textContent).toContain("CÂU 2 /");
+  });
+
   it("loads a passage from the selected topic and can replace it with another", async () => {
     await selectTopic();
     const first = container.querySelector("textarea")!.value;

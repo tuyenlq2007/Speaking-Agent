@@ -22,6 +22,8 @@ import { sampleTopics } from "./data/sampleSentences";
 import { createSampleQueue } from "./domain/sampleQueue";
 
 const MAX_PASSAGE_LENGTH = 6000;
+// How long the learner can read the recognised words before the next sentence starts.
+const RESULT_REVIEW_MS = 2500;
 
 const errorCopy: Record<PracticeError, { title: string; detail: string }> = {
   "permission-denied": {
@@ -138,24 +140,29 @@ function App() {
 
   useEffect(() => {
     if (state.phase !== "results") return;
-    if (sentenceIndex < sentences.length - 1) {
-      const nextIndex = sentenceIndex + 1;
-      setSentenceResults((previous) => [...previous, state]);
-      setSentenceIndex(nextIndex);
+    const hasNextSentence = sentenceIndex < sentences.length - 1;
+    if (!hasNextSentence && (!selectedTopicId || !nextSample.current)) return;
+    // Leave the recognised words and transcript on screen before moving on.
+    const timer = window.setTimeout(() => {
+      if (hasNextSentence) {
+        const nextIndex = sentenceIndex + 1;
+        setSentenceResults((previous) => [...previous, state]);
+        setSentenceIndex(nextIndex);
+        setLiveTranscript("");
+        setState(startPractice(sentences[nextIndex]));
+        return;
+      }
+      const passage = nextSample.current!();
+      const passageSentences = splitIntoSentences(passage);
+      setDraft(passage);
+      setSentences(passageSentences);
+      setSentenceIndex(0);
+      setSentenceResults([]);
+      setPassageNumber((previous) => previous + 1);
       setLiveTranscript("");
-      setState(startPractice(sentences[nextIndex]));
-      return;
-    }
-    if (!selectedTopicId || !nextSample.current) return;
-    const passage = nextSample.current();
-    const passageSentences = splitIntoSentences(passage);
-    setDraft(passage);
-    setSentences(passageSentences);
-    setSentenceIndex(0);
-    setSentenceResults([]);
-    setPassageNumber((previous) => previous + 1);
-    setLiveTranscript("");
-    setState(startPractice(passageSentences[0]));
+      setState(startPractice(passageSentences[0]));
+    }, RESULT_REVIEW_MS);
+    return () => window.clearTimeout(timer);
   }, [selectedTopicId, sentenceIndex, sentences, state]);
 
   useEffect(() => {
@@ -301,6 +308,9 @@ function App() {
     setPassageNumber(1);
   };
 
+  const reviewingSentence = state.phase === "results"
+    && (sentenceIndex < sentences.length - 1 || Boolean(selectedTopicId && nextSample.current));
+
   const displayedWords = useMemo(() => {
     if (state.words.length) return state.words;
     return tokenizeForDisplay(draft).map((token) => ({ ...token, status: "pending" as const }));
@@ -332,7 +342,7 @@ function App() {
           onRandomSample={() => { if (nextSample.current) setDraft(nextSample.current()); }}
           replaying={isReplaying}
         />
-      ) : state.phase === "results" ? (
+      ) : state.phase === "results" && !reviewingSentence ? (
         <ResultView results={[...sentenceResults, state]} onRetry={retryPassage} onNew={startNewPassage} />
       ) : (
         <PracticeView
@@ -509,7 +519,10 @@ function PracticeView(props: PracticeViewProps) {
   const ready = state.phase.startsWith("ready");
   const finalMode = state.phase.includes("final") || state.retryPhase?.includes("final");
   const attempt = state.attempts;
-  const instruction = speaking
+  const reviewing = state.phase === "results";
+  const instruction = reviewing
+    ? state.successful ? "Tốt lắm — câu này đã đọc đúng" : "Đã xong câu này"
+    : speaking
     ? finalMode ? "Nghe lại câu này" : "Hãy nghe câu mẫu"
     : listening
       ? "Đang nghe — hãy nói ngay bây giờ"
@@ -535,7 +548,7 @@ function PracticeView(props: PracticeViewProps) {
         <p className="eyebrow">CÂU {props.sentenceIndex + 1} / {props.sentenceCount} · {finalMode ? "LƯỢT THỬ LẠI CUỐI" : "LƯỢT ĐỌC ĐẦU"}</p>
         <h1>{instruction}</h1>
         <p className="practice-hint">
-          {speaking ? "Tập trung vào nhịp điệu và trọng âm. Micrô sẽ tự bật ngay sau đó." : listening ? "Nói tự nhiên, rõ ràng và không cần quá nhanh." : "Micrô đang chuẩn bị tự động bật."}
+          {reviewing ? "Xem kết quả từng từ bên dưới. Câu tiếp theo sẽ bắt đầu ngay." : speaking ? "Tập trung vào nhịp điệu và trọng âm. Micrô sẽ tự bật ngay sau đó." : listening ? "Nói tự nhiên, rõ ràng và không cần quá nhanh." : "Micrô đang chuẩn bị tự động bật."}
         </p>
 
         <div className="sentence-board" aria-label="Kết quả từng từ">
