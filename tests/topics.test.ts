@@ -4,7 +4,7 @@ import { splitIntoSentences } from "../src/domain/sentences";
 
 describe("practice topics", () => {
   it("provides distinct, populated topics with usable practice passages", () => {
-    expect(sampleTopics.map((topic) => topic.label)).toEqual(["Traditional QA", "AI QA", "Introduce Yourself"]);
+    expect(sampleTopics.map((topic) => topic.label)).toEqual(["Traditional QA", "AI QA", "Introduce Yourself", "Introduce AI QA"]);
     expect(new Set(sampleTopics.map((topic) => topic.id)).size).toBe(sampleTopics.length);
     for (const topic of sampleTopics) {
       expect(topic.label.trim()).not.toBe("");
